@@ -13,7 +13,8 @@ jobs:
       - run: git clone -b v13.11.0 --single-branch https://github.com/nodejs/node --depth=10
       - name: Build
         run: cd node && ./configure --debug && make -j2
+      - run: 7z a node-debug.7z node/out/Debug/node
       - uses: actions/upload-artifact@v1
         with:
           name: node-debug-build
-          path: node/out/Debug/node
+          path: node-debug.7z

@@ -1,0 +1,19 @@
+name: CI
+
+on: [push, pull_request]
+
+jobs:
+  build-linux-debug:
+    runs-on: ubuntu-latest
+    container: gengjiawen/node-build:2020-02-14
+    steps:
+      - uses: actions/checkout@v2
+      - name: Environment Information
+        run: npx envinfo
+      - run: git clone -b v13.11.0 --single-branch https://github.com/nodejs/node --depth=10
+      - name: Build
+        run: ./configure --debug && make -j2
+      - uses: actions/upload-artifact@v1
+        with:
+          name: linux-binary
+          path: out/Debug/node

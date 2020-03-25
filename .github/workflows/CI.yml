@@ -15,5 +15,5 @@ jobs:
         run: cd node && ./configure --debug && make -j2
       - uses: actions/upload-artifact@v1
         with:
-          name: linux-debug
-          path: out/Debug/node
+          name: node-debug-build
+          path: node/out/Debug/node

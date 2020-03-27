@@ -14,7 +14,6 @@ jobs:
       - name: Build
         run: cd node && ./configure --debug && make -j2
       - run: 7z a node-debug.7z node/out/Debug/node
-      - uses: actions/upload-artifact@v1
+      - uses: actions/upload-artifact@v2-preview
         with:
-          name: node-debug-build
           path: node-debug.7z

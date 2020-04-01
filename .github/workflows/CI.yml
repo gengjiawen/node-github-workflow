@@ -4,7 +4,7 @@ on: [push, pull_request]
 
 jobs:
   build-linux-debug:
-    runs-on: ubuntu-latest
+    runs-on: macos-latest
     container: gengjiawen/node-build
     steps:
       - uses: actions/checkout@v2

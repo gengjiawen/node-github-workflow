@@ -1,4 +1,4 @@
-name: CI
+name: Node ASAN
 
 on: [push, pull_request]
 
@@ -10,9 +10,9 @@ jobs:
       - uses: actions/checkout@v2
       - name: Environment Information
         run: npx envinfo
-      - run: git clone -b v13.11.0 --single-branch https://github.com/nodejs/node --depth=10
+      - run: git clone https://github.com/nodejs/node --depth=10
       - name: Build
-        run: cd node && ./configure --debug && make -j2
+        run: cd node && ./configure --debug --enable-asan --ninja && ninja -C out/Debug && python3 tools/test.py -J --mode=debug
       - run: 7z a node-debug.7z node/out/Debug/node
       - uses: actions/upload-artifact@v2-preview
         with:

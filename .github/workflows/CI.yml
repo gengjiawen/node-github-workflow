@@ -15,7 +15,4 @@ jobs:
         run: cd node && ./configure --debug --enable-asan --ninja && ninja -C out/Debug
       - name: Test
         run: cd node && python3 tools/test.py -J --mode=debug
-      - run: 7z a node-debug.7z node/out/Debug/node
-      - uses: actions/upload-artifact@v2-preview
-        with:
-          path: node-debug.7z
+        

@@ -12,7 +12,7 @@ jobs:
         run: npx envinfo
       - run: git clone https://github.com/nodejs/node --depth=10
       - name: ASAN Build
-        run: cd node && ./configure --debug --enable-asan --ninja && ninja -C out/Debug
+        run: cd node && ./configure --debug --enable-asan --experimental-quic --ninja && ninja -C out/Debug
       - name: Test
         run: cd node && python3 tools/test.py -J --mode=debug
         

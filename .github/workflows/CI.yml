@@ -29,7 +29,7 @@ jobs:
       - name: Setup tmate session
         uses: mxschmitt/action-tmate@v2
         env:
-          test_cmd: ${{matrix.config.qemu}} ${{GITHUB_WORKSPACE}}/libuv/build/uv_run_tests_a
+          test_cmd: ${matrix.config.qemu} ${GITHUB_WORKSPACE}/libuv/build/uv_run_tests_a
       - name: Test
         run: |
           cp libuv/build/uv_run_tests_a /home/user

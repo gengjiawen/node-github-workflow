@@ -26,7 +26,6 @@ jobs:
           cmake .. -DBUILD_TESTING=ON -DQEMU=ON -DCMAKE_C_COMPILER=${{ matrix.config.cc }}
           cmake --build .
           ls -lh
-          export test_cmd=${matrix.config.qemu} ${GITHUB_WORKSPACE}/libuv/build/uv_run_tests_a
       - name: Setup tmate session
         uses: mxschmitt/action-tmate@v2
       - name: Test

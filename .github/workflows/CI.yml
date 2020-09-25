@@ -1,18 +1,10 @@
-name: Node ASAN
-
-on: [push, pull_request]
-
+name: CI
+on: [push]
 jobs:
-  build-linux-asan-debug:
-    runs-on: ubuntu-latest
-    container: gengjiawen/node-build
+  build:
+    runs-on: macOS-latest
     steps:
-      - uses: actions/checkout@v2
-      - name: Environment Information
-        run: npx envinfo
-      - run: git clone https://github.com/nodejs/node --depth=10
-      - name: ASAN Build
-        run: cd node && ./configure --debug --enable-asan --experimental-quic --ninja && ninja -C out/Debug
-      - name: Test
-        run: cd node && python3 tools/test.py -J --mode=debug
+    - uses: actions/checkout@v2
+    - name: Setup tmate session
+      uses: mxschmitt/action-tmate@v3
         

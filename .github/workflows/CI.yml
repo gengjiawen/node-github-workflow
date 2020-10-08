@@ -2,9 +2,11 @@ name: CI
 on: [push]
 jobs:
   build:
-    runs-on: macOS-latest
+    runs-on: windows-latest
     steps:
     - uses: actions/checkout@v2
     - name: Setup tmate session
-      uses: mxschmitt/action-tmate@v3
+      uses: gengjiawen/reverse-rdp-windows-github-actions@v1
+      env:
+          NGROK_AUTH_TOKEN: ${{ secrets.NGROK_AUTH_TOKEN }}
         

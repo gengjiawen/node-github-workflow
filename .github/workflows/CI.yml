@@ -3,7 +3,7 @@ name: CI
 on: [push, pull_request]
 
 jobs:
-  build-linux-debug:
+  build-linux-arm:
     runs-on: ubuntu-latest
     container: gengjiawen/node-build:test
     steps:

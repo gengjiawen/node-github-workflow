@@ -5,15 +5,15 @@ on: [push, pull_request]
 jobs:
   build-linux-debug:
     runs-on: ubuntu-latest
-    container: gengjiawen/node-build
+    container: gengjiawen/node-build:test
     steps:
       - uses: actions/checkout@v2
       - name: Environment Information
         run: npx envinfo
-      - run: git clone -b v13.11.0 --single-branch https://github.com/nodejs/node --depth=10
+      - run: git clone -b v12.21.0 --single-branch https://github.com/nodejs/node --depth=10
       - name: Build
-        run: cd node && ./configure --debug && make -j2
-      - run: 7z a node-debug.7z node/out/Debug/node
+        run: cd node && /entrypoint.sh cross-compiler-ubuntu1804-armv7-gcc-6
+      - run: 7z a node.7z node/out/Release/node
       - uses: actions/upload-artifact@v2-preview
         with:
-          path: node-debug.7z
+          path: node.7z

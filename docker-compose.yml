@@ -1,0 +1,20 @@
+version: '3'
+
+services:
+
+  node-arm:
+    container_name: 'node-arm'
+    build:
+      context: .
+      dockerfile: ./Dockerfile
+    restart: always
+    ports:
+      - "2223:22"
+    cap_add:
+      - SYS_PTRACE
+    tty: true
+    volumes:      
+      - .:/pwd
+      - $HOME/.local:/root/.local
+      - /opt/.ccache:/root/.ccache
+      - /opt/data:/opt/data

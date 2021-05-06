@@ -12,8 +12,11 @@ jobs:
         run: npx envinfo
       - run: git clone -b master --single-branch https://github.com/nodejs/node --depth=10
       - name: Build
-        run: cd node && ./configure --experimental-quic && make -j2
-      - run: 7z a node-quic.7z node/out/Release/node
-      - uses: actions/upload-artifact@v2-preview
+        run: |
+          sudo apt update && sudo apt install ninja-build -y
+          cd node
+          ./configure --enable-lto --ninja --debug
+          ninja -C out/Debug
+      - uses: actions/upload-artifact@v2
         with:
-          path: node-quic.7z
+          path: node/out/Debug/node

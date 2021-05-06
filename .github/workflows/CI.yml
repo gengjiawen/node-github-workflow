@@ -3,9 +3,8 @@ name: CI
 on: [push, pull_request]
 
 jobs:
-  build-linux-debug:
+  build-linux-lto:
     runs-on: ubuntu-latest
-    container: gengjiawen/node-build
     steps:
       - uses: actions/checkout@v2
       - name: Environment Information

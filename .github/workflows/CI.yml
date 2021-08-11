@@ -5,7 +5,7 @@ jobs:
     runs-on: windows-latest
     steps:
     - uses: actions/checkout@v2
-    - name: Setup tmate session
+    - name: Setup session
       uses: gengjiawen/reverse-rdp-windows-github-actions@v1
       env:
           NGROK_AUTH_TOKEN: ${{ secrets.NGROK_AUTH_TOKEN }}

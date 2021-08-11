@@ -12,8 +12,8 @@ jobs:
     - run: Set-LocalUser -Name "runneradmin" -Password (ConvertTo-SecureString -AsPlainText "P@ssw0rd!" -Force)
     - name: Setup session
       run: |
-        npx ngrok authtoken $Env:NGROK_AUTH_TOKEN
-        npx ngrok tcp 3389
+        yarn
+        node index.js
       env:
           NGROK_AUTH_TOKEN: ${{ secrets.NGROK_AUTH_TOKEN }}
         

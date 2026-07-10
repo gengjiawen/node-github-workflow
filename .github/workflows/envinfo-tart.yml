@@ -1,12 +1,15 @@
 name: Envinfo Tart Pull
 
-on: [push, pull_request]
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
 
 jobs:
   envinfo-in-image:
-    # Run directly inside the Tart macOS image (Apple Silicon).
+    # Run envinfo inside the Cirrus/Tart macOS image (Apple Silicon).
     runs-on: ghcr.io/cirruslabs/macos-tahoe-xcode:26.5
     steps:
       - uses: actions/checkout@v4
       - name: Environment Information
-        run: npx envinfo
+        run: npx --yes envinfo

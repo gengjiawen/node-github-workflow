@@ -4,8 +4,8 @@ on: [push, pull_request]
 
 jobs:
   envinfo-tart-pull:
-    # Tart + softnet require Apple Silicon macOS Sequoia+.
-    runs-on: macos-15
+    # Tart VM images only work on Apple Silicon macOS hosts.
+    runs-on: macos-latest
     timeout-minutes: 180
     steps:
       - uses: actions/checkout@v4

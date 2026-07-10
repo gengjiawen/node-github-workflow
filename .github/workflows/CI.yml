@@ -7,13 +7,14 @@ jobs:
     runs-on: ubuntu-latest
     container: gengjiawen/node-build
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
       - name: Environment Information
         run: npx envinfo
       - run: git clone -b v13.11.0 --single-branch https://github.com/nodejs/node --depth=10
       - name: Build
         run: cd node && ./configure --debug && make -j2
       - run: 7z a node-debug.7z node/out/Debug/node
-      - uses: actions/upload-artifact@v2-preview
+      - uses: actions/upload-artifact@v4
         with:
+          name: node-debug
           path: node-debug.7z

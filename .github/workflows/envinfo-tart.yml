@@ -3,79 +3,10 @@ name: Envinfo Tart Pull
 on: [push, pull_request]
 
 jobs:
-  envinfo-tart-pull:
-    # Tart VM images only work on Apple Silicon macOS hosts.
-    runs-on: macos-latest
-    timeout-minutes: 180
+  envinfo-in-image:
+    # Run directly inside the Tart macOS image (Apple Silicon).
+    runs-on: ghcr.io/cirruslabs/macos-tahoe-xcode:26.5
     steps:
       - uses: actions/checkout@v4
-
-      - name: Free disk space
-        run: |
-          set -euxo pipefail
-          df -h /
-          # Remove unused Xcode apps to make room for the ~50GB+ Tart image.
-          for app in /Applications/Xcode*.app; do
-            [ -e "$app" ] || continue
-            echo "Removing $app"
-            sudo rm -rf "$app"
-          done
-          sudo rm -rf ~/Library/Developer/CoreSimulator/Caches || true
-          sudo rm -rf /Users/runner/Library/Android || true
-          brew cleanup -s || true
-          df -h /
-
-      - name: Install Tart
-        run: |
-          set -euxo pipefail
-          brew trust cirruslabs/cli || true
-          brew install cirruslabs/cli/tart
-          tart --version
-
-      - name: Clone, boot image, and run envinfo inside VM
-        run: |
-          set -euxo pipefail
-          df -h /
-
-          VM_NAME=tahoe-xcode
-          IMAGE=ghcr.io/cirruslabs/macos-tahoe-xcode:26.5
-
-          tart clone "$IMAGE" "$VM_NAME"
-          tart list
-          df -h /
-
-          # Headless CI hosts may need an unlocked login keychain.
-          security create-keychain -p '' login.keychain 2>/dev/null || true
-          security unlock-keychain -p '' login.keychain || true
-          security list-keychains -s login.keychain || true
-
-          tart run --no-graphics "$VM_NAME" &
-          TART_PID=$!
-
-          cleanup() {
-            tart stop "$VM_NAME" 2>/dev/null || true
-            kill "$TART_PID" 2>/dev/null || true
-            wait "$TART_PID" 2>/dev/null || true
-          }
-          trap cleanup EXIT
-
-          echo "Waiting for guest agent..."
-          for i in $(seq 1 90); do
-            if tart exec "$VM_NAME" true; then
-              echo "Guest is ready after ${i} attempt(s)"
-              break
-            fi
-            if ! kill -0 "$TART_PID" 2>/dev/null; then
-              echo "tart run exited unexpectedly"
-              wait "$TART_PID" || true
-              exit 1
-            fi
-            sleep 5
-            if [ "$i" -eq 90 ]; then
-              echo "Timed out waiting for guest agent"
-              exit 1
-            fi
-          done
-
-          tart exec "$VM_NAME" uname -a
-          tart exec "$VM_NAME" npx --yes envinfo
+      - name: Environment Information
+        run: npx envinfo

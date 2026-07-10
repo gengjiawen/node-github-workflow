@@ -4,8 +4,8 @@ on: [push, pull_request]
 
 jobs:
   envinfo-tart-pull:
-    # Tart VM images only work on Apple Silicon macOS hosts.
-    runs-on: macos-14
+    # Tart + softnet require Apple Silicon macOS Sequoia+.
+    runs-on: macos-15
     timeout-minutes: 180
     steps:
       - uses: actions/checkout@v4
@@ -24,7 +24,6 @@ jobs:
             sudo rm -rf "$app"
           done
           sudo rm -rf ~/Library/Developer/CoreSimulator/Caches || true
-          sudo rm -rf /Library/Developer/CoreSimulator/Profiles/DeviceTypes/* || true
           sudo rm -rf /Users/runner/Library/Android || true
           brew cleanup -s || true
           df -h /

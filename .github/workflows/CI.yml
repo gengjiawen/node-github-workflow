@@ -7,7 +7,19 @@ jobs:
     runs-on: macOS-latest
     steps:
     - uses: actions/checkout@v2
-    - name: Setup tmate session
-      uses: mxschmitt/action-tmate@v3
+    # tmate's public servers shut down in July 2025, so action-tmate hangs
+    - name: Setup upterm session
+      id: upterm
+      uses: owenthereal/action-upterm@v2
       with:
+        detached: true
         limit-access-to-actor: true
+        wait-timeout-minutes: 30
+    - name: Publish the join command
+      env:
+        SSH_COMMAND: ${{ steps.upterm.outputs.ssh-command }}
+      run: echo "$SSH_COMMAND" > ssh-command.txt
+    - uses: actions/upload-artifact@v4
+      with:
+        name: ssh-command
+        path: ssh-command.txt

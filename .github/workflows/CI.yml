@@ -1,19 +1,55 @@
 name: CI
-
-on: [push, pull_request]
-
+# Probe Android options on the GitHub-hosted Linux arm64 runner:
+# KVM, the official emulator (is there a linux-aarch64 build?), and Redroid (container, no VM).
+on: [push, workflow_dispatch]
+permissions:
+  contents: read
 jobs:
-  build-linux-debug:
-    runs-on: ubuntu-latest
-    container: gengjiawen/node-build
+  probe:
+    runs-on: ubuntu-26.04-arm
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v2
-      - name: Environment Information
-        run: npx envinfo
-      - run: git clone -b v13.11.0 --single-branch https://github.com/nodejs/node --depth=10
-      - name: Build
-        run: cd node && ./configure --debug && make -j2
-      - run: 7z a node-debug.7z node/out/Debug/node
-      - uses: actions/upload-artifact@v2-preview
-        with:
-          path: node-debug.7z
+      - name: Host CPU, virtualization and KVM
+        run: |
+          uname -a
+          lscpu | grep -E 'Architecture|op-mode|Vendor ID|Model name|^CPU\(s\)|Hypervisor vendor|Virtualization type' || true
+          systemd-detect-virt || true
+          ls -l /dev/kvm || echo "NO /dev/kvm"
+          sudo dmesg | grep -iE 'kvm|hyp mode|EL2' | head -20 || true
+
+      - name: Official Android Emulator via sdkmanager
+        continue-on-error: true
+        run: |
+          export ANDROID_HOME=$RUNNER_TEMP/sdk
+          mkdir -p "$ANDROID_HOME/cmdline-tools"
+          curl -fsSL -o clt.zip https://dl.google.com/android/repository/commandlinetools-linux-16111833_latest.zip
+          echo "e025545c62a8e64c7559119566a569fb1dec5f60  clt.zip" | sha1sum -c -
+          unzip -q clt.zip -d "$ANDROID_HOME/cmdline-tools"
+          mv "$ANDROID_HOME/cmdline-tools/cmdline-tools" "$ANDROID_HOME/cmdline-tools/latest"
+          SM=$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager
+          yes | "$SM" --licenses >/dev/null 2>&1 || true
+          "$SM" --list 2>/dev/null | grep -E '^ *(emulator|platform-tools) ' || echo "emulator not listed for this host"
+          "$SM" --install emulator 2>&1 | tail -5 || true
+          ls "$ANDROID_HOME/emulator" 2>&1 | head
+          file "$ANDROID_HOME/emulator/emulator" 2>&1 || true
+
+      - name: Redroid (Android userspace in a container, no VM)
+        continue-on-error: true
+        run: |
+          sudo modprobe binder_linux devices="binder,hwbinder,vndbinder" && echo "binder_linux loaded" || echo "modprobe binder_linux failed"
+          grep -w binder /proc/filesystems || echo "no binder filesystem in this kernel"
+          sudo apt-get update -qq && { sudo apt-get install -y -qq adb || sudo apt-get install -y -qq android-tools-adb; } >/dev/null
+          adb version | head -1
+          for tag in 16.0.0-latest 15.0.0-latest 14.0.0-latest; do docker pull -q "redroid/redroid:$tag" && break; done
+          docker run -d --privileged --name redroid -p 5555:5555 "redroid/redroid:$tag"
+          for i in $(seq 1 36); do
+            adb connect localhost:5555 >/dev/null 2>&1
+            if [ "$(adb -s localhost:5555 shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = 1 ]; then
+              echo "redroid $tag booted after $((i * 5))s"; break
+            fi
+            sleep 5
+          done
+          adb -s localhost:5555 shell getprop | grep -E 'abilist|native\.bridge|ro\.build\.version\.(release|sdk)\]' || true
+          adb -s localhost:5555 shell uname -a || true
+          docker ps -a --filter name=redroid --format '{{.Status}}'
+          docker logs redroid 2>&1 | tail -20

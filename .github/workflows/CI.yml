@@ -2,8 +2,9 @@ name: CI
 # Probe Android options on the GitHub-hosted Linux arm64 runner (ubuntu-26.04-arm).
 # Run 1 (9e81749): no /dev/kvm, no linux-aarch64 emulator build, sdkmanager 23's `android`
 # binary is x86-64 only; Redroid 16 started but sys.boot_completed stayed unset for 3 min.
-# Run 2: Redroid with memfd (kernel 7.0 has no ashmem) and guest GPU, then run 32/64-bit
-# static binaries and install ABI-only APKs that an x64 job builds with the Android SDK.
+# Run 2 (85eaab4): memfd + guest GPU; hello32/hello64 run natively, but zygote and the
+# services it restarts loop, so boot never completes and PackageManager is never ready.
+# Run 3: Redroid 14/15/16 in parallel, crash buffer dumped when boot does not complete.
 on: [push, workflow_dispatch]
 permissions:
   contents: read
@@ -47,28 +48,24 @@ jobs:
   probe:
     needs: build-probes
     runs-on: ubuntu-26.04-arm
-    timeout-minutes: 30
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        redroid: ["14.0.0-latest", "15.0.0-latest", "16.0.0-latest"]
     steps:
       - uses: actions/download-artifact@v4
         with:
           name: probes
           path: probes
 
-      - name: Host CPU, virtualization and KVM
-        run: |
-          uname -a
-          lscpu | grep -E 'Architecture|op-mode|Model name|^CPU\(s\)' || true
-          systemd-detect-virt || true
-          ls -l /dev/kvm || echo "NO /dev/kvm"
-
-      - name: Redroid 16 with memfd and guest GPU
-        continue-on-error: true
+      - name: Redroid ${{ matrix.redroid }} with memfd and guest GPU
         run: |
           set +e
           sudo modprobe binder_linux devices="binder,hwbinder,vndbinder" && echo "binder_linux loaded"
           sudo apt-get update -qq && sudo apt-get install -y -qq adb >/dev/null
-          docker run -d --privileged --name redroid -p 5555:5555 redroid/redroid:16.0.0-latest \
-            androidboot.use_memfd=true androidboot.redroid_gpu_mode=guest
+          docker run -d --privileged --name redroid -p 5555:5555 "redroid/redroid:${{ matrix.redroid }}" \
+            androidboot.use_memfd=true androidboot.redroid_gpu_mode=guest >/dev/null
           A="adb -s localhost:5555"
           booted=
           for i in $(seq 1 72); do
@@ -78,7 +75,7 @@ jobs:
             fi
             sleep 5
           done
-          echo "sys.boot_completed=1 after: ${booted:-NOT within 360s}s"
+          echo "sys.boot_completed=1 after: ${booted:-NOT within 360}s"
           $A shell getprop | grep -E 'ro\.build\.version\.(release|sdk)\]|ro\.product\.cpu\.abilist|native\.bridge'
           echo "--- run static binaries"
           for b in hello32 hello64; do
@@ -86,11 +83,14 @@ jobs:
             $A shell chmod 755 "/data/local/tmp/$b"
             echo "$b: $($A shell "/data/local/tmp/$b" 2>&1)"
           done
-          echo "--- adb install ABI-only APKs"
-          for apk in probes/only-*.apk; do
-            echo "$(basename "$apk"): $($A install "$apk" 2>&1 | tail -1)"
-          done
-          if [ -z "$booted" ]; then
-            $A shell getprop | grep -E 'init\.svc\.' | grep -v running
-            $A logcat -d 2>/dev/null | tail -60
+          if [ -n "$booted" ]; then
+            echo "--- adb install ABI-only APKs"
+            for apk in probes/only-*.apk; do
+              echo "$(basename "$apk"): $(timeout 60 $A install "$apk" 2>&1 | tail -1)"
+            done
+          else
+            echo "--- services stuck restarting"
+            $A shell getprop | grep -E 'init\.svc\.' | grep restarting
+            echo "--- crash buffer"
+            $A logcat -d -b crash 2>/dev/null | grep -E 'FATAL|Abort message|signal [0-9]+|Cmdline|pid: |#0[0-4] |Exception|Caused by|at com\.android\.server' | head -60
           fi

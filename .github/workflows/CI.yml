@@ -1,55 +1,96 @@
 name: CI
-# Probe Android options on the GitHub-hosted Linux arm64 runner:
-# KVM, the official emulator (is there a linux-aarch64 build?), and Redroid (container, no VM).
+# Probe Android options on the GitHub-hosted Linux arm64 runner (ubuntu-26.04-arm).
+# Run 1 (9e81749): no /dev/kvm, no linux-aarch64 emulator build, sdkmanager 23's `android`
+# binary is x86-64 only; Redroid 16 started but sys.boot_completed stayed unset for 3 min.
+# Run 2: Redroid with memfd (kernel 7.0 has no ashmem) and guest GPU, then run 32/64-bit
+# static binaries and install ABI-only APKs that an x64 job builds with the Android SDK.
 on: [push, workflow_dispatch]
 permissions:
   contents: read
 jobs:
+  build-probes:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Build static hello binaries and ABI-only APKs
+        run: |
+          NDK=${ANDROID_NDK_LATEST_HOME:-$ANDROID_NDK_HOME}
+          TC=$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin
+          mkdir -p out && cd out
+          echo '#include <stdio.h>' > hello.c
+          echo 'int main(void) { printf("%zu-bit code runs\n", sizeof(void *) * 8); return 0; }' >> hello.c
+          "$TC/armv7a-linux-androideabi24-clang" -static -O2 -o hello32 hello.c
+          "$TC/aarch64-linux-android24-clang" -static -O2 -o hello64 hello.c
+          file hello32 hello64
+          BT=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
+          PJ=$(ls -d "$ANDROID_HOME"/platforms/android-[0-9]* | sort -V | tail -1)/android.jar
+          keytool -genkeypair -keystore k.jks -storepass android -keypass android -alias a \
+            -keyalg RSA -keysize 2048 -validity 1000 -dname CN=probe 2>/dev/null
+          for abi in armeabi-v7a arm64-v8a x86_64; do
+            w=work-$abi
+            mkdir -p "$w/lib/$abi"
+            printf '<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="%s">\n<uses-sdk android:minSdkVersion="24" android:targetSdkVersion="34"/>\n<application android:hasCode="false" android:extractNativeLibs="true"/>\n</manifest>\n' \
+              "probe.abi.$(echo "$abi" | tr -d '_-')" > "$w/AndroidManifest.xml"
+            "$BT/aapt2" link -o "$w/base.apk" -I "$PJ" --manifest "$w/AndroidManifest.xml"
+            printf 'placeholder\n' > "$w/lib/$abi/libprobe.so"
+            (cd "$w" && zip -q base.apk "lib/$abi/libprobe.so")
+            "$BT/zipalign" -f 4 "$w/base.apk" "$w/aligned.apk"
+            "$BT/apksigner" sign --ks k.jks --ks-pass pass:android --out "only-$abi.apk" "$w/aligned.apk"
+          done
+          rm -rf work-* k.jks hello.c
+          ls -l
+      - uses: actions/upload-artifact@v4
+        with:
+          name: probes
+          path: out/
+          retention-days: 1
+
   probe:
+    needs: build-probes
     runs-on: ubuntu-26.04-arm
     timeout-minutes: 30
     steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: probes
+          path: probes
+
       - name: Host CPU, virtualization and KVM
         run: |
           uname -a
-          lscpu | grep -E 'Architecture|op-mode|Vendor ID|Model name|^CPU\(s\)|Hypervisor vendor|Virtualization type' || true
+          lscpu | grep -E 'Architecture|op-mode|Model name|^CPU\(s\)' || true
           systemd-detect-virt || true
           ls -l /dev/kvm || echo "NO /dev/kvm"
-          sudo dmesg | grep -iE 'kvm|hyp mode|EL2' | head -20 || true
 
-      - name: Official Android Emulator via sdkmanager
+      - name: Redroid 16 with memfd and guest GPU
         continue-on-error: true
         run: |
-          export ANDROID_HOME=$RUNNER_TEMP/sdk
-          mkdir -p "$ANDROID_HOME/cmdline-tools"
-          curl -fsSL -o clt.zip https://dl.google.com/android/repository/commandlinetools-linux-16111833_latest.zip
-          echo "e025545c62a8e64c7559119566a569fb1dec5f60  clt.zip" | sha1sum -c -
-          unzip -q clt.zip -d "$ANDROID_HOME/cmdline-tools"
-          mv "$ANDROID_HOME/cmdline-tools/cmdline-tools" "$ANDROID_HOME/cmdline-tools/latest"
-          SM=$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager
-          yes | "$SM" --licenses >/dev/null 2>&1 || true
-          "$SM" --list 2>/dev/null | grep -E '^ *(emulator|platform-tools) ' || echo "emulator not listed for this host"
-          "$SM" --install emulator 2>&1 | tail -5 || true
-          ls "$ANDROID_HOME/emulator" 2>&1 | head
-          file "$ANDROID_HOME/emulator/emulator" 2>&1 || true
-
-      - name: Redroid (Android userspace in a container, no VM)
-        continue-on-error: true
-        run: |
-          sudo modprobe binder_linux devices="binder,hwbinder,vndbinder" && echo "binder_linux loaded" || echo "modprobe binder_linux failed"
-          grep -w binder /proc/filesystems || echo "no binder filesystem in this kernel"
-          sudo apt-get update -qq && { sudo apt-get install -y -qq adb || sudo apt-get install -y -qq android-tools-adb; } >/dev/null
-          adb version | head -1
-          for tag in 16.0.0-latest 15.0.0-latest 14.0.0-latest; do docker pull -q "redroid/redroid:$tag" && break; done
-          docker run -d --privileged --name redroid -p 5555:5555 "redroid/redroid:$tag"
-          for i in $(seq 1 36); do
+          set +e
+          sudo modprobe binder_linux devices="binder,hwbinder,vndbinder" && echo "binder_linux loaded"
+          sudo apt-get update -qq && sudo apt-get install -y -qq adb >/dev/null
+          docker run -d --privileged --name redroid -p 5555:5555 redroid/redroid:16.0.0-latest \
+            androidboot.use_memfd=true androidboot.redroid_gpu_mode=guest
+          A="adb -s localhost:5555"
+          booted=
+          for i in $(seq 1 72); do
             adb connect localhost:5555 >/dev/null 2>&1
-            if [ "$(adb -s localhost:5555 shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = 1 ]; then
-              echo "redroid $tag booted after $((i * 5))s"; break
+            if [ "$($A shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = 1 ]; then
+              booted=$((i * 5)); break
             fi
             sleep 5
           done
-          adb -s localhost:5555 shell getprop | grep -E 'abilist|native\.bridge|ro\.build\.version\.(release|sdk)\]' || true
-          adb -s localhost:5555 shell uname -a || true
-          docker ps -a --filter name=redroid --format '{{.Status}}'
-          docker logs redroid 2>&1 | tail -20
+          echo "sys.boot_completed=1 after: ${booted:-NOT within 360s}s"
+          $A shell getprop | grep -E 'ro\.build\.version\.(release|sdk)\]|ro\.product\.cpu\.abilist|native\.bridge'
+          echo "--- run static binaries"
+          for b in hello32 hello64; do
+            $A push "probes/$b" "/data/local/tmp/$b" >/dev/null
+            $A shell chmod 755 "/data/local/tmp/$b"
+            echo "$b: $($A shell "/data/local/tmp/$b" 2>&1)"
+          done
+          echo "--- adb install ABI-only APKs"
+          for apk in probes/only-*.apk; do
+            echo "$(basename "$apk"): $($A install "$apk" 2>&1 | tail -1)"
+          done
+          if [ -z "$booted" ]; then
+            $A shell getprop | grep -E 'init\.svc\.' | grep -v running
+            $A logcat -d 2>/dev/null | tail -60
+          fi

@@ -2,7 +2,19 @@ name: CI
 # Interactive Android 15 (Redroid, native arm64) on ubuntu-26.04-arm for testing an
 # Android app by hand over upterm. The APK and any credentials travel over the upterm
 # session (ssh/sftp), never through this repo or the job log.
-on: [push, workflow_dispatch]
+on:
+  push:
+  workflow_dispatch:
+    inputs:
+      width:
+        description: Display width in pixels
+        default: '720'
+      height:
+        description: Display height in pixels
+        default: '1600'
+      dpi:
+        description: Display density
+        default: '280'
 permissions:
   contents: read
 jobs:
@@ -10,14 +22,18 @@ jobs:
     runs-on: ubuntu-26.04-arm
     timeout-minutes: 120
     steps:
-      - name: Start Redroid 15 (720x1600, 280 dpi)
+      - name: Start Redroid 15 (${{ inputs.width || '720' }}x${{ inputs.height || '1600' }}, ${{ inputs.dpi || '280' }} dpi)
+        env:
+          W: ${{ inputs.width || '720' }}
+          H: ${{ inputs.height || '1600' }}
+          DPI: ${{ inputs.dpi || '280' }}
         run: |
           sudo modprobe binder_linux devices="binder,hwbinder,vndbinder"
           sudo apt-get update -qq && sudo apt-get install -y -qq adb >/dev/null
           # memfd: kernel 7.0 has no ashmem. Redroid 16 crash-loops on this runner.
           docker run -d --privileged --name redroid -p 5555:5555 redroid/redroid:15.0.0-latest \
             androidboot.use_memfd=true androidboot.redroid_gpu_mode=guest \
-            androidboot.redroid_width=720 androidboot.redroid_height=1600 androidboot.redroid_dpi=280 >/dev/null
+            androidboot.redroid_width="$W" androidboot.redroid_height="$H" androidboot.redroid_dpi="$DPI" >/dev/null
           A="adb -s localhost:5555"
           for i in $(seq 1 60); do
             adb connect localhost:5555 >/dev/null 2>&1

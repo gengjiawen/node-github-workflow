@@ -4,7 +4,7 @@ permissions:
   contents: read
 jobs:
   build:
-    runs-on: macOS-latest
+    runs-on: xcode-27
     steps:
     - uses: actions/checkout@v2
     # tmate's public servers shut down in July 2025, so action-tmate hangs

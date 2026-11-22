@@ -1,0 +1,98 @@
+name: Cinehaus iOS verification
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ios:
+    runs-on: macos-latest
+    steps:
+      - name: Check out Cinehaus
+        uses: actions/checkout@v4
+        with:
+          repository: gengjiawen/cinehaus
+          ref: ios-host-verify-20261122
+          path: cinehaus
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.12.0
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 12.15.0
+
+      - name: Install JavaScript dependencies
+        working-directory: cinehaus
+        run: pnpm install --frozen-lockfile
+
+      - name: Install CocoaPods dependencies
+        working-directory: cinehaus/ios
+        run: pod install
+
+      - name: Build iOS Simulator app
+        working-directory: cinehaus
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -workspace ios/Cinehaus.xcworkspace \
+            -scheme Cinehaus \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO \
+            build 2>&1 | tee ios-build.log
+
+      - name: Boot iPhone and iPad simulators
+        working-directory: cinehaus
+        run: |
+          set -euo pipefail
+          node > "$RUNNER_TEMP/simulator-selection" <<'NODE'
+          import { execFileSync } from 'node:child_process';
+          import { appendFileSync } from 'node:fs';
+          const list = JSON.parse(execFileSync('xcrun', ['simctl', 'list', 'devices', 'available', '-j'], { encoding: 'utf8' }));
+          const devices = Object.values(list.devices ?? {}).flat();
+          const choose = (pattern) => devices.find((device) => device.isAvailable !== false && pattern.test(device.name));
+          const iphone = choose(/^iPhone /);
+          const ipad = choose(/^iPad /);
+          if (!iphone || !ipad) throw new Error(`Missing simulator family: iPhone=${Boolean(iphone)} iPad=${Boolean(ipad)}`);
+          appendFileSync(process.env.GITHUB_ENV, `IPHONE_UDID=${iphone.udid}\nIPAD_UDID=${ipad.udid}\n`);
+          console.log(JSON.stringify({ iphone: { name: iphone.name, udid: iphone.udid }, ipad: { name: ipad.name, udid: ipad.udid } }));
+          NODE
+          cat "$RUNNER_TEMP/simulator-selection"
+          xcrun simctl boot "$IPHONE_UDID" 2>/dev/null || true
+          xcrun simctl boot "$IPAD_UDID" 2>/dev/null || true
+          xcrun simctl bootstatus "$IPHONE_UDID" -b
+          xcrun simctl bootstatus "$IPAD_UDID" -b
+
+      - name: Install and launch on both simulator families
+        working-directory: cinehaus
+        run: |
+          set -euo pipefail
+          app=$(find "$PWD/build" "$PWD/ios/build" "$PWD/ios/DerivedData" "$PWD/DerivedData" -type d -name 'Cinehaus.app' -print -quit 2>/dev/null || true)
+          if [[ -z "$app" ]]; then
+            app=$(find "$HOME/Library/Developer/Xcode/DerivedData" -type d -path '*/Build/Products/Debug-iphonesimulator/Cinehaus.app' -print -quit)
+          fi
+          [[ -n "$app" && -d "$app" ]] || { echo 'Cinehaus.app not found' >&2; find . -name '*.app' -print; exit 1; }
+          echo "app=$app"
+          for udid in "$IPHONE_UDID" "$IPAD_UDID"; do
+            xcrun simctl install "$udid" "$app"
+            xcrun simctl launch "$udid" io.github.gengjiawen.cinehaus
+            sleep 5
+            xcrun simctl io "$udid" screenshot "ios-${udid}.png"
+          done
+          xcrun simctl list devices available
+
+      - name: Upload iOS verification artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cinehaus-ios-verification
+          path: |
+            cinehaus/ios-build.log
+            cinehaus/ios-*.png
